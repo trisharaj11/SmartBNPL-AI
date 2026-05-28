@@ -28,7 +28,7 @@ function App() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col ${darkMode ? 'hero-mesh bg-dots' : 'hero-mesh-light'}`}>
+    <div className={`app-shell min-h-screen flex flex-col ${darkMode ? 'hero-mesh bg-dots' : 'hero-mesh-light'}`}>
       
       {/* Horizontal Nav Header */}
       <Header
@@ -44,6 +44,7 @@ function App() {
           <LandingHero
             darkMode={darkMode}
             onGetStarted={() => setActiveSection('analyze')}
+            onOpenSimulator={() => setActiveSection('simulator')}
           />
         )}
 

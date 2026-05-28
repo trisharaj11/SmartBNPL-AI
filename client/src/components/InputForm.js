@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { CheckCircle2, CreditCard, FileCheck2, Gauge, RotateCcw, ShoppingBag, UserCircle2, Workflow } from 'lucide-react';
 
 const N8N_WEBHOOK_URL = process.env.REACT_APP_N8N_WEBHOOK_URL || 'https://tanyajaiswal1625.app.n8n.cloud/webhook-test/bnpl-check';
 
@@ -43,7 +44,7 @@ function InputField({ label, name, value, onChange, type = 'number', min = 0, ma
           className={`${bg} ${prefix ? 'pl-8' : ''}`}
         />
       </div>
-      {error && <p className="text-xs text-[#FF3D71] mt-1">{error}</p>}
+      {error && <p className="text-xs text-[#EF4444] mt-1">{error}</p>}
     </div>
   );
 }
@@ -53,7 +54,7 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  const cardBase = darkMode ? 'glass-card neon-border' : 'bg-white border border-gray-200 shadow-lg rounded-2xl';
+  const cardBase = 'premium-panel';
   const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
   const textSecondary = darkMode ? 'text-slate-400' : 'text-gray-500';
   const selectBg = darkMode
@@ -161,18 +162,41 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
     : null;
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Title */}
-      <div>
-        <h2 className={`text-2xl font-bold mb-1 ${textPrimary}`}>BNPL Eligibility Analysis</h2>
-        <p className={`text-sm ${textSecondary}`}>Fill in your financial profile to get an AI-powered eligibility decision</p>
+      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+        <div>
+          <div className={`section-kicker mb-3 ${darkMode ? 'bg-white/5 text-sky-300 border border-white/10' : 'bg-sky-50 text-sky-700 border border-sky-100'}`}>
+            <Workflow size={13} />
+            Customer profile intake
+          </div>
+          <h2 className={`text-2xl md:text-3xl font-bold mb-1 ${textPrimary}`}>BNPL Eligibility Analysis</h2>
+          <p className={`text-sm ${textSecondary}`}>Enter a customer profile to calculate eligibility, affordability, and repayment safety.</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          {[
+            { label: 'Profile', icon: UserCircle2, color: '#38BDF8' },
+            { label: 'Score', icon: Gauge, color: '#22C55E' },
+            { label: 'Decision', icon: FileCheck2, color: '#F59E0B' },
+          ].map((step, i) => (
+            <div key={step.label} className={`px-3 py-2 rounded-lg border ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-white border-slate-200 text-slate-600'}`}>
+              <div className="flex items-center gap-2">
+                <step.icon size={14} style={{ color: step.color }} />
+                <span className="font-semibold">{String(i + 1).padStart(2, '0')}</span>
+              </div>
+              <div className="mt-1">{step.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className={`${cardBase} p-6 md:p-8`}>
-        {/* Personal Info */}
-        <div className="mb-6">
-          <h3 className={`text-xs font-semibold uppercase tracking-wider mb-4 ${darkMode ? 'text-[#00E5FF]' : 'text-blue-600'}`}>
-            ◈ Personal Information
+      <div className={`${cardBase} p-6 md:p-8 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8`}>
+        <div>
+          {/* Personal Info */}
+          <div className="mb-7">
+          <h3 className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-4 ${darkMode ? 'text-[#38BDF8]' : 'text-blue-600'}`}>
+            <UserCircle2 size={14} />
+            Personal Information
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <InputField label="Full Name" name="fullName" value={form.fullName} onChange={handleChange}
@@ -188,12 +212,13 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
               </select>
             </div>
           </div>
-        </div>
+          </div>
 
-        {/* Financial Profile */}
-        <div className="mb-6">
-          <h3 className={`text-xs font-semibold uppercase tracking-wider mb-4 ${darkMode ? 'text-[#00FF87]' : 'text-green-600'}`}>
-            ◈ Financial Profile
+          {/* Financial Profile */}
+          <div className="mb-7">
+          <h3 className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-4 ${darkMode ? 'text-[#22C55E]' : 'text-green-600'}`}>
+            <CreditCard size={14} />
+            Financial Profile
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <InputField label="Monthly Income" name="monthlyIncome" value={form.monthlyIncome} onChange={handleChange}
@@ -207,12 +232,13 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
             <InputField label="Number of Defaults" name="defaults" value={form.defaults} onChange={handleChange}
               placeholder="0" error={errors.defaults} darkMode={darkMode} />
           </div>
-        </div>
+          </div>
 
-        {/* Purchase Details */}
-        <div className="mb-8">
-          <h3 className={`text-xs font-semibold uppercase tracking-wider mb-4 ${darkMode ? 'text-[#FFB300]' : 'text-amber-600'}`}>
-            ◈ Purchase Details
+          {/* Purchase Details */}
+          <div className="mb-8">
+          <h3 className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-4 ${darkMode ? 'text-[#F59E0B]' : 'text-amber-600'}`}>
+            <ShoppingBag size={14} />
+            Purchase Details
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <InputField label="Product Price" name="productPrice" value={form.productPrice} onChange={handleChange}
@@ -224,55 +250,81 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
           {/* Tenure Selector */}
           <div>
             <label className={`block text-xs font-semibold mb-3 ${textSecondary}`}>
-              Preferred Tenure: <span className={`font-bold ${darkMode ? 'text-[#00E5FF]' : 'text-blue-600'}`}>{form.tenure} months</span>
+              Preferred Tenure: <span className={`font-bold ${darkMode ? 'text-[#38BDF8]' : 'text-blue-600'}`}>{form.tenure} months</span>
             </label>
             <input type="range" name="tenure" min={3} max={12} step={3}
               value={form.tenure}
               onChange={handleChange}
               className="w-full"
-              style={{ accentColor: '#00E5FF' }}
+              style={{ accentColor: '#38BDF8' }}
             />
             <div className="flex justify-between mt-2">
               {tenureOptions.map(t => (
                 <button key={t} onClick={() => setForm(f => ({ ...f, tenure: t }))}
                   className={`text-xs px-3 py-1 rounded-full transition-all duration-150
                     ${form.tenure === t
-                      ? (darkMode ? 'bg-[#00E5FF20] text-[#00E5FF] border border-[#00E5FF40]' : 'bg-blue-100 text-blue-700 border border-blue-300')
+                      ? (darkMode ? 'bg-[#38BDF820] text-[#38BDF8] border border-[#38BDF840]' : 'bg-blue-100 text-blue-700 border border-blue-300')
                       : (darkMode ? 'text-slate-500 hover:text-slate-300' : 'text-gray-400 hover:text-gray-600')}`}>
                   {t}M
                 </button>
               ))}
             </div>
           </div>
-        </div>
-
-        {/* EMI Preview */}
-        {emiPreview && (
-          <div className={`mb-6 px-4 py-3 rounded-xl text-sm flex items-center justify-between
-            ${darkMode ? 'bg-[#00E5FF08] border border-[#00E5FF20]' : 'bg-blue-50 border border-blue-200'}`}>
-            <span className={textSecondary}>Estimated monthly EMI preview</span>
-            <span className={`font-bold font-mono ${darkMode ? 'text-[#00E5FF]' : 'text-blue-700'}`}>
-              ≈ ₹{emiPreview.toLocaleString('en-IN')}
-            </span>
           </div>
-        )}
 
-        {/* Buttons */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button onClick={handleSubmit} disabled={loading} className="btn-primary flex-1 flex items-center justify-center gap-2">
-            {loading ? (
-              <>
-                <span className="w-4 h-4 border-2 border-[#00E5FF] border-t-transparent rounded-full animate-spin"></span>
-                Analyzing...
-              </>
-            ) : (
-              <>◈ Analyze Eligibility</>
-            )}
-          </button>
-          <button onClick={handleReset} className="btn-danger flex-1">
-            ↺ Reset Form
-          </button>
+          {/* EMI Preview */}
+          {emiPreview && (
+            <div className={`mb-6 px-4 py-3 rounded-lg text-sm flex items-center justify-between
+              ${darkMode ? 'bg-[#38BDF808] border border-[#38BDF820]' : 'bg-blue-50 border border-blue-200'}`}>
+              <span className={textSecondary}>Estimated monthly EMI preview</span>
+              <span className={`font-bold font-mono ${darkMode ? 'text-[#38BDF8]' : 'text-blue-700'}`}>
+                ≈ ₹{emiPreview.toLocaleString('en-IN')}
+              </span>
+            </div>
+          )}
+
+          {/* Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button onClick={handleSubmit} disabled={loading} className="btn-primary flex-1 flex items-center justify-center gap-2">
+              {loading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-[#38BDF8] border-t-transparent rounded-full animate-spin"></span>
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={17} />
+                  Analyze Eligibility
+                </>
+              )}
+            </button>
+            <button onClick={handleReset} className="btn-danger flex-1 flex items-center justify-center gap-2">
+              <RotateCcw size={16} />
+              Reset Form
+            </button>
+          </div>
         </div>
+
+        <aside className={`lg:border-l lg:pl-8 ${darkMode ? 'lg:border-white/10' : 'lg:border-slate-200'}`}>
+          <div className={`section-kicker mb-4 ${darkMode ? 'bg-white/5 text-slate-300 border border-white/10' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
+            <Gauge size={13} />
+            Scoring model
+          </div>
+          <h3 className={`text-lg font-bold mb-3 ${textPrimary}`}>What the engine evaluates</h3>
+          <div className="space-y-3">
+            {[
+              ['EMI burden', 'Keeps repayment below healthy income utilization.'],
+              ['Credit health', 'Uses score, history length, and default count.'],
+              ['Purchase fit', 'Compares price, down payment, and tenure options.'],
+              ['Decision reason', 'Explains approval, conditional approval, or rejection.'],
+            ].map(([title, desc]) => (
+              <div key={title} className={`p-3 rounded-lg border ${darkMode ? 'bg-white/[0.03] border-white/10' : 'bg-slate-50 border-slate-200'}`}>
+                <div className={`text-sm font-semibold ${textPrimary}`}>{title}</div>
+                <div className={`text-xs mt-1 leading-relaxed ${textSecondary}`}>{desc}</div>
+              </div>
+            ))}
+          </div>
+        </aside>
       </div>
     </div>
   );

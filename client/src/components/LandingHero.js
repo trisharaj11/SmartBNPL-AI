@@ -1,123 +1,115 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { ArrowRight, BarChart3, Calculator, Gauge, ShieldCheck, Workflow } from 'lucide-react';
 
 const stats = [
-  { label: 'Accuracy Rate', value: '98.7%', color: '#00FF87' },
-  { label: 'Avg Decision Time', value: '<2s', color: '#00E5FF' },
-  { label: 'Risk Models', value: '14+', color: '#9B59B6' },
-  { label: 'BNPL Partners', value: '50+', color: '#FFB300' },
+  { label: 'Decision Rules', value: '14+', color: '#22C55E' },
+  { label: 'Decision Time', value: '<2s', color: '#38BDF8' },
+  { label: 'Risk Grades', value: 'A-D', color: '#8B5CF6' },
+  { label: 'Tenures Compared', value: '4', color: '#F59E0B' },
 ];
 
 const features = [
-  { icon: '◈', title: 'AI Eligibility Engine', desc: 'Multi-factor credit analysis using 14+ risk parameters' },
-  { icon: '⟁', title: 'Smart EMI Calculator', desc: 'Reducing balance formula with real-time tenure comparison' },
-  { icon: '◉', title: 'What-If Simulator', desc: 'Interactive scenario modeling for optimal repayment plans' },
-  { icon: '⬡', title: 'Risk Intelligence', desc: 'Grade-based risk scoring with detailed factor analysis' },
+  { icon: ShieldCheck, title: 'Eligibility Engine', desc: 'Approval, conditional approval, and rejection logic with clear reason codes.' },
+  { icon: Calculator, title: 'EMI Intelligence', desc: 'Reducing-balance EMI math with interest and tenure tradeoffs.' },
+  { icon: BarChart3, title: 'Affordability Dashboard', desc: 'Eligible limit, risk grade, repayment load, and salary allocation in one view.' },
+  { icon: Workflow, title: 'n8n Automation Layer', desc: 'Webhook-driven workflow for processing, storage, and notifications.' },
 ];
 
-function AnimatedCounter({ target, duration = 1500, suffix = '' }) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    let start = 0;
-    const end = parseFloat(target);
-    if (isNaN(end)) return;
-    const step = end / (duration / 16);
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= end) { setCount(end); clearInterval(timer); }
-      else setCount(Math.floor(start));
-    }, 16);
-    return () => clearInterval(timer);
-  }, [target, duration]);
-  return <span>{count}{suffix}</span>;
+function DataCard({ className, title, value, accent, bars }) {
+  return (
+    <div className={`hero-data-card ${className}`}>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-[11px] uppercase tracking-wider text-slate-400">{title}</span>
+        <span className="text-sm font-bold font-mono" style={{ color: accent }}>{value}</span>
+      </div>
+      <div className="sparkline" style={{ '--bar-color': accent }}>
+        {bars.map((height, i) => <span key={i} style={{ height: `${height}%` }} />)}
+      </div>
+    </div>
+  );
 }
 
-export default function LandingHero({ darkMode, onGetStarted }) {
-  const cardBase = darkMode ? 'glass-card neon-border' : 'glass-card-light border border-blue-100 shadow-lg';
+export default function LandingHero({ darkMode, onGetStarted, onOpenSimulator }) {
   const textSecondary = darkMode ? 'text-slate-400' : 'text-gray-500';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
+  const textPrimary = darkMode ? 'text-white' : 'text-gray-950';
+  const metricCard = darkMode ? 'premium-panel' : 'premium-panel';
 
   return (
     <div className="space-y-12">
-      {/* Hero */}
-      <div className="text-center py-16 relative">
-        {/* Decorative blobs */}
-        <div className="absolute top-0 left-1/4 w-64 h-64 rounded-full opacity-5 blur-3xl pointer-events-none"
-          style={{ background: 'radial-gradient(circle, #00E5FF, transparent)' }} />
-        <div className="absolute bottom-0 right-1/4 w-64 h-64 rounded-full opacity-5 blur-3xl pointer-events-none"
-          style={{ background: 'radial-gradient(circle, #00FF87, transparent)' }} />
-
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-6 text-xs font-semibold"
-          style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}>
-          <span className="w-1.5 h-1.5 rounded-full bg-[#00FF87] animate-pulse"></span>
-          AI-Powered BNPL Risk Intelligence v2.0
+      <section className="hero-command -mx-1 md:-mx-4">
+        <div className="hero-data-layer" aria-hidden="true">
+          <DataCard className="one" title="Risk Score" value="A" accent="#22C55E" bars={[38, 52, 46, 72, 88, 64, 78]} />
+          <DataCard className="two" title="EMI Load" value="23%" accent="#38BDF8" bars={[72, 60, 54, 46, 38, 34, 28]} />
+          <DataCard className="three" title="Tenure Fit" value="6M" accent="#F59E0B" bars={[32, 44, 62, 76, 58, 48, 36]} />
+          <DataCard className="four" title="Limit" value="₹57.6K" accent="#8B5CF6" bars={[24, 36, 42, 58, 68, 78, 86]} />
         </div>
 
-        <h1 className={`text-4xl md:text-6xl font-bold mb-4 leading-tight ${textPrimary}`}>
-          Responsible{' '}
-          <span className="gradient-text">Buy Now Pay Later</span>
-          <br />Intelligence Platform
-        </h1>
+        <div className="hero-copy">
+          <div className={`section-kicker mb-6 ${darkMode ? 'bg-white/5 text-sky-300 border border-white/10' : 'bg-sky-50 text-sky-700 border border-sky-100'}`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]"></span>
+            BNPL affordability command center
+          </div>
 
-        <p className={`text-lg md:text-xl max-w-2xl mx-auto mb-10 ${textSecondary}`}>
-          Advanced AI-driven eligibility scoring, EMI optimization, and risk analysis for modern BNPL lending — trusted by fintechs worldwide.
-        </p>
+          <h1 className={`text-4xl md:text-6xl font-bold leading-tight mb-5 ${textPrimary}`}>
+            Smart BNPL decisions users can trust
+          </h1>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <button onClick={onGetStarted} className="btn-primary flex items-center gap-2">
-            <span>Start Free Analysis</span>
-            <span>→</span>
-          </button>
-          <button className={`px-8 py-3.5 rounded-xl font-semibold text-sm border transition-all duration-200
-            ${darkMode ? 'border-[#1E2D4D] text-slate-300 hover:border-[#00E5FF30] hover:text-[#00E5FF]' : 'border-gray-200 text-gray-600 hover:border-blue-300'}`}>
-            View Sample Report
-          </button>
+          <p className={`text-base md:text-lg max-w-3xl mx-auto mb-9 leading-relaxed ${textSecondary}`}>
+            Evaluate repayment safety, eligible limit, risk grade, EMI burden, and recommended tenure through one polished financial decision-support workflow.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button onClick={onGetStarted} className="btn-primary flex items-center gap-2">
+              Start Eligibility Check
+              <ArrowRight size={16} />
+            </button>
+            <button onClick={onOpenSimulator} className="btn-secondary flex items-center gap-2">
+              Open Simulator
+              <Gauge size={16} />
+            </button>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Stats bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {stats.map((s, i) => (
-          <div key={i} className={`${cardBase} card-lift p-6 text-center`}>
-            <div className="text-2xl font-bold font-mono mb-1" style={{ color: s.color }}>
-              {s.value}
-            </div>
+      <div className="metric-strip">
+        {stats.map((s) => (
+          <div key={s.label} className={`${metricCard} p-5`}>
+            <div className="text-2xl font-bold font-mono mb-1" style={{ color: s.color }}>{s.value}</div>
             <div className={`text-xs ${textSecondary}`}>{s.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Features */}
-      <div>
-        <h2 className={`text-xl font-bold mb-6 ${textPrimary}`}>Platform Capabilities</h2>
+      <section>
+        <div className="flex items-end justify-between gap-4 mb-6">
+          <div>
+            <div className={`section-kicker mb-3 ${darkMode ? 'bg-white/5 text-slate-300 border border-white/10' : 'bg-white text-slate-600 border border-slate-200'}`}>
+              <BarChart3 size={13} />
+              Core workflow
+            </div>
+            <h2 className={`text-2xl font-bold ${textPrimary}`}>Built for explainable affordability</h2>
+          </div>
+          <button onClick={onGetStarted} className="hidden sm:inline-flex btn-secondary items-center gap-2 py-2.5 px-4 text-sm">
+            Analyze Profile
+            <ArrowRight size={15} />
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {features.map((f, i) => (
-            <div key={i} className={`${cardBase} card-lift p-6 flex items-start gap-4`}>
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-lg"
-                style={{ background: 'linear-gradient(135deg, #00E5FF15, #00FF8710)', border: '1px solid rgba(0,229,255,0.2)' }}>
-                {f.icon}
+          {features.map((feature) => (
+            <div key={feature.title} className="premium-panel p-6 flex items-start gap-4 card-lift">
+              <div className="w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: darkMode ? 'rgba(56,189,248,0.09)' : '#EFF6FF', border: '1px solid rgba(56,189,248,0.2)' }}>
+                <feature.icon size={19} color={darkMode ? '#38BDF8' : '#0369A1'} />
               </div>
               <div>
-                <div className={`font-semibold text-sm mb-1 ${textPrimary}`}>{f.title}</div>
-                <div className={`text-xs leading-relaxed ${textSecondary}`}>{f.desc}</div>
+                <div className={`font-semibold text-sm mb-1 ${textPrimary}`}>{feature.title}</div>
+                <div className={`text-xs leading-relaxed ${textSecondary}`}>{feature.desc}</div>
               </div>
             </div>
           ))}
         </div>
-      </div>
-
-      {/* CTA Banner */}
-      <div className="rounded-2xl overflow-hidden relative"
-        style={{ background: 'linear-gradient(135deg, rgba(0,229,255,0.08), rgba(0,255,135,0.06))', border: '1px solid rgba(0,229,255,0.2)' }}>
-        <div className="px-8 py-10 flex flex-col md:flex-row items-center justify-between gap-6">
-          <div>
-            <h3 className={`text-xl font-bold mb-2 ${textPrimary}`}>Ready to analyze your BNPL eligibility?</h3>
-            <p className={`text-sm ${textSecondary}`}>Get instant AI-powered risk assessment and personalized recommendations.</p>
-          </div>
-          <button onClick={onGetStarted} className="btn-primary whitespace-nowrap">
-            Analyze Now →
-          </button>
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

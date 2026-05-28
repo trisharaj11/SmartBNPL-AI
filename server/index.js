@@ -5,6 +5,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'smartbnpl-api' });
+});
+
 // EMI calculation using reducing balance method
 function calculateEMI(principal, annualRate, tenureMonths) {
   const monthlyRate = annualRate / 12 / 100;

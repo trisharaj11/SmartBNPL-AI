@@ -83,6 +83,14 @@ The webhook URL is configured in `client/src/components/InputForm.js` and can be
 REACT_APP_N8N_WEBHOOK_URL=https://your-n8n-domain/webhook/bnpl-check
 ```
 
+For deployment, use the production n8n URL format:
+
+```text
+https://your-n8n-domain/webhook/bnpl-check
+```
+
+Avoid using `/webhook-test/...` in production because n8n test webhooks usually work only while the workflow editor is listening.
+
 Recommended n8n workflows to present:
 
 | Workflow | n8n Flow | Purpose |
@@ -115,6 +123,73 @@ eligible_limit, monthly_emi, risk_grade, decision, recommended_tenure
 Interview line:
 
 > We used n8n to separate automation from the frontend. The React app handles user interaction, while n8n manages eligibility processing, decision branching, data storage, and notifications.
+
+## ☁️ Deployment
+
+Recommended setup:
+
+| Part | Platform | Notes |
+|------|----------|-------|
+| **Frontend** | Vercel or Netlify | Deploy the `client` folder as a static React app |
+| **Backend API** | Render or Railway | Optional for API demo endpoints; the React app can still work through n8n and local fallback |
+| **Automation** | n8n Cloud | Use the production webhook URL, not the test webhook URL |
+
+### Deploy Frontend on Vercel
+
+1. Import this GitHub repo in Vercel.
+2. Set the project root directory to `client`.
+3. Use these build settings:
+
+```text
+Build Command: npm run build
+Output Directory: build
+Install Command: npm install
+```
+
+4. Add this environment variable:
+
+```text
+REACT_APP_N8N_WEBHOOK_URL=https://your-n8n-domain/webhook/bnpl-check
+```
+
+5. Redeploy after adding the env variable.
+
+The `client/vercel.json` file is included so browser refreshes keep serving the React app.
+
+### Deploy Backend on Render
+
+1. Create a Render Web Service from this repo.
+2. Set the root directory to `server`.
+3. Use these settings:
+
+```text
+Build Command: npm install
+Start Command: npm start
+```
+
+4. Add this environment variable:
+
+```text
+PORT=5001
+```
+
+5. Verify the service after deploy:
+
+```text
+https://your-render-service.onrender.com/health
+```
+
+You can also use the included `render.yaml` blueprint to create both the backend API and static frontend from Render.
+
+### Production Checklist
+
+- n8n workflow is active.
+- Frontend env uses `/webhook/...`, not `/webhook-test/...`.
+- Vercel frontend loads without console errors.
+- Submit one approved profile and one rejected profile.
+- Dashboard shows decision, risk grade, eligible limit, recommended tenure, EMI table, and charts.
+- Download report works.
+- Backend `/health`, `/analyze`, and `/calculate-emi` work if you deployed the API.
 
 ## 📁 Project Structure
 
