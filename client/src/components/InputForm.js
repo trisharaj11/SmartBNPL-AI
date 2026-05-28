@@ -97,10 +97,7 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
         employmentType: form.employmentType,
       };
 
-      const token = localStorage.getItem('token');
-      const res = await axios.post('http://localhost:5000/analyze', payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await axios.post('http://localhost:5000/analyze', payload);
       onAnalysisComplete(res.data, payload);
     } catch (err) {
       // Fallback: run analysis client-side if backend unreachable
