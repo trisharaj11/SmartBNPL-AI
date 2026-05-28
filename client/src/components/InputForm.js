@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+
+const N8N_WEBHOOK_URL = 'https://tanyajaiswal1625.app.n8n.cloud/webhook-test/bnpl-check';
 
 const initialForm = {
   fullName: '',
+  email: '',
   monthlyIncome: '',
   existingEMI: '',
   creditScore: '',
@@ -67,6 +69,8 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
   const validate = () => {
     const errs = {};
     if (!form.fullName.trim()) errs.fullName = 'Full name is required';
+    if (!form.email.trim()) errs.email = 'Email is required';
+    else if (!/^\S+@\S+\.\S+$/.test(form.email)) errs.email = 'Enter a valid email';
     if (!form.monthlyIncome || Number(form.monthlyIncome) <= 0) errs.monthlyIncome = 'Enter valid income';
     if (Number(form.existingEMI) < 0) errs.existingEMI = 'Cannot be negative';
     if (!form.creditScore || Number(form.creditScore) < 300 || Number(form.creditScore) > 900) errs.creditScore = 'Credit score: 300–900';
@@ -86,6 +90,7 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
     try {
       const payload = {
         fullName: form.fullName,
+        email: form.email,
         monthlyIncome: Number(form.monthlyIncome),
         existingEMI: Number(form.existingEMI) || 0,
         creditScore: Number(form.creditScore),
@@ -97,11 +102,35 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
         employmentType: form.employmentType,
       };
 
-      const token = localStorage.getItem('token');
-      const res = await axios.post('http://localhost:5000/analyze', payload, {
-        headers: { Authorization: `Bearer ${token}` }
+      const n8nPayload = {
+        name: payload.fullName,
+        email: payload.email,
+        monthly_income: payload.monthlyIncome,
+        credit_history: payload.creditHistory,
+        defaults: payload.defaults,
+        product_price: payload.productPrice,
+        credit_score: payload.creditScore,
+        existing_emi: payload.existingEMI,
+        down_payment: payload.downPayment,
+        tenure: payload.tenure,
+        employment_type: payload.employmentType,
+      };
+
+      const response = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(n8nPayload),
       });
-      onAnalysisComplete(res.data, payload);
+
+      if (!response.ok) {
+        throw new Error(`n8n webhook returned ${response.status}`);
+      }
+
+      const n8nResult = await response.json();
+      const result = normalizeN8nResult(n8nResult, payload);
+      onAnalysisComplete(result, payload);
     } catch (err) {
       // Fallback: run analysis client-side if backend unreachable
       const payload = {
@@ -115,6 +144,7 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
         tenure: Number(form.tenure),
         employmentType: form.employmentType,
         fullName: form.fullName,
+        email: form.email,
       };
       const result = runClientAnalysis(payload);
       onAnalysisComplete(result, payload);
@@ -147,6 +177,8 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <InputField label="Full Name" name="fullName" value={form.fullName} onChange={handleChange}
               type="text" placeholder="e.g. Arjun Sharma" error={errors.fullName} darkMode={darkMode} />
+            <InputField label="Email" name="email" value={form.email} onChange={handleChange}
+              type="email" placeholder="arjun@example.com" error={errors.email} darkMode={darkMode} />
             <div>
               <label className={`block text-xs font-semibold mb-1.5 ${textSecondary}`}>Employment Type</label>
               <select name="employmentType" value={form.employmentType} onChange={handleChange} className={selectBg}>
@@ -244,6 +276,62 @@ export default function InputForm({ darkMode, onAnalysisComplete }) {
       </div>
     </div>
   );
+}
+
+function normalizeN8nResult(n8nResult, payload) {
+  const localResult = runClientAnalysis(payload);
+  const result = Array.isArray(n8nResult) ? n8nResult[0] : n8nResult;
+
+  if (!result || typeof result !== 'object') {
+    return localResult;
+  }
+
+  const approvedValue = result.approved ?? result.eligible ?? result.is_eligible ?? result.status;
+  const approved = typeof approvedValue === 'boolean'
+    ? approvedValue
+    : typeof approvedValue === 'string'
+      ? ['approved', 'eligible', 'yes', 'true', 'accept', 'accepted'].includes(approvedValue.toLowerCase())
+      : localResult.approved;
+
+  const affordabilityScore = Number(result.affordabilityScore ?? result.affordability_score ?? result.score ?? localResult.affordabilityScore);
+  const monthlyEMI = Number(result.monthlyEMI ?? result.monthly_emi ?? result.emi ?? localResult.monthlyEMI);
+  const annualRate = Number(result.annualRate ?? result.annual_rate ?? result.interest_rate ?? localResult.annualRate);
+  const principal = Number(result.principal ?? result.loan_amount ?? localResult.principal);
+  const totalPayable = Number(result.totalPayable ?? result.total_payable ?? monthlyEMI * payload.tenure);
+  const totalInterest = Number(result.totalInterest ?? result.total_interest ?? totalPayable - principal);
+  const remainingSalary = Number(result.remainingSalary ?? result.remaining_salary ?? payload.monthlyIncome - payload.existingEMI - monthlyEMI);
+  const riskGrade = result.riskGrade ?? result.risk_grade ?? localResult.riskGrade;
+  const riskLevel = result.riskLevel ?? result.risk_level ?? localResult.riskLevel;
+  const rejectionReasons = result.rejectionReasons ?? result.rejection_reasons ?? localResult.rejectionReasons;
+  const message = result.message ?? result.reason ?? result.recommendation;
+
+  return {
+    ...localResult,
+    approved,
+    affordabilityScore,
+    riskGrade,
+    riskLevel,
+    monthlyEMI,
+    totalPayable,
+    totalInterest,
+    annualRate,
+    principal,
+    remainingSalary,
+    recommendations: Array.isArray(result.recommendations)
+      ? result.recommendations
+      : message
+        ? [{ type: approved ? 'success' : 'warning', text: message }, ...localResult.recommendations]
+        : localResult.recommendations,
+    riskFactors: Array.isArray(result.riskFactors ?? result.risk_factors)
+      ? (result.riskFactors ?? result.risk_factors)
+      : localResult.riskFactors,
+    emiComparison: Array.isArray(result.emiComparison ?? result.emi_comparison)
+      ? (result.emiComparison ?? result.emi_comparison)
+      : localResult.emiComparison,
+    financialHealth: Number(result.financialHealth ?? result.financial_health ?? affordabilityScore),
+    rejectionReasons,
+    n8nRaw: result,
+  };
 }
 
 // Client-side fallback analysis
