@@ -75,6 +75,30 @@ function RiskBar({ label, value, max = 100, color, darkMode }) {
 const TENURE_COLORS = ['#00E5FF', '#00FF87', '#FFB300', '#9B59B6'];
 
 export default function ResultDashboard({ result, formData, darkMode, onNewAnalysis }) {
+  const cardBase = darkMode ? 'glass-card neon-border' : 'bg-white border border-gray-200 shadow-lg rounded-2xl';
+  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
+  const textSecondary = darkMode ? 'text-slate-400' : 'text-gray-500';
+
+  if (!result) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className={`${cardBase} p-8 md:p-10 text-center`}>
+          <div className="w-16 h-16 mx-auto mb-5 rounded-2xl flex items-center justify-center text-2xl"
+            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)' }}>
+            ◉
+          </div>
+          <h2 className={`text-2xl font-bold mb-2 ${textPrimary}`}>Dashboard</h2>
+          <p className={`text-sm mb-6 ${textSecondary}`}>
+            Run an eligibility check to see affordability score, repayment charts, risk factors, and recommendations here.
+          </p>
+          <button onClick={onNewAnalysis} className="btn-primary py-2.5 px-5 text-sm">
+            ◈ Start Eligibility Check
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const {
     approved, affordabilityScore, riskGrade, riskLevel, monthlyEMI,
     totalPayable, totalInterest, annualRate, principal, remainingSalary,
@@ -86,9 +110,6 @@ export default function ResultDashboard({ result, formData, darkMode, onNewAnaly
   const animatedScore = useAnimatedCounter(affordabilityScore, 1200);
   const animatedRemaining = useAnimatedCounter(remainingSalary, 1000);
 
-  const cardBase = darkMode ? 'glass-card neon-border' : 'bg-white border border-gray-200 shadow-lg rounded-2xl';
-  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
-  const textSecondary = darkMode ? 'text-slate-400' : 'text-gray-500';
   const chartBg = darkMode ? '#0F1629' : '#F8FAFF';
   const chartText = darkMode ? '#94A3B8' : '#6B7280';
   const gridColor = darkMode ? '#1E2D4D' : '#E5E7EB';
