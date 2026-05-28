@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Activity, Gauge, IndianRupee, Lightbulb, Percent, SlidersHorizontal } from 'lucide-react';
+import { AreaChart, Area, BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { Activity, CheckCircle2, Gauge, IndianRupee, Lightbulb, Percent, ShieldCheck, SlidersHorizontal, Sparkles, Timer, TrendingDown, TrendingUp } from 'lucide-react';
 
 function calcEMI(principal, annualRate, tenure) {
   if (principal <= 0) return 0;
@@ -8,8 +8,48 @@ function calcEMI(principal, annualRate, tenure) {
   return Math.round((principal * r * Math.pow(1 + r, tenure)) / (Math.pow(1 + r, tenure) - 1));
 }
 
+function getRateForScore(creditScore) {
+  if (creditScore >= 750) return 12;
+  if (creditScore >= 700) return 14;
+  if (creditScore >= 650) return 16;
+  if (creditScore < 600) return 24;
+  return 18;
+}
+
+function evaluateScenario({ productPrice, downPayment, tenure, creditScore, monthlyIncome, existingEMI }) {
+  const rate = getRateForScore(creditScore);
+  const principal = Math.max(0, productPrice - downPayment);
+  const emi = calcEMI(principal, rate, tenure);
+  const totalEMIRatio = monthlyIncome > 0 ? (emi + existingEMI) / monthlyIncome : 1;
+  const remaining = monthlyIncome - existingEMI - emi;
+
+  let score = 100;
+  if (totalEMIRatio > 0.5) score -= 30;
+  else if (totalEMIRatio > 0.4) score -= 20;
+  else if (totalEMIRatio > 0.3) score -= 10;
+  if (creditScore < 550) score -= 25;
+  else if (creditScore < 650) score -= 15;
+  else if (creditScore >= 750) score += 5;
+  score = Math.max(0, Math.min(100, score));
+
+  return {
+    emi,
+    totalEMIRatio,
+    remaining,
+    score,
+    approved: totalEMIRatio <= 0.5 && creditScore >= 500 && principal > 0,
+    rate,
+    principal,
+    total: emi * tenure,
+  };
+}
+
+function clampDownPayment(value, productPrice) {
+  const maxDownPayment = Math.floor(productPrice * 0.8);
+  return Math.min(Math.max(0, Math.round(value / 500) * 500), maxDownPayment);
+}
+
 function SliderRow({ label, value, min, max, step, onChange, format, darkMode, color = '#38BDF8' }) {
-  const percent = ((value - min) / (max - min)) * 100;
   return (
     <div className="mb-5">
       <div className="flex justify-between mb-2">
@@ -45,31 +85,46 @@ export default function WhatIfSimulator({ darkMode, initialData }) {
   const chartText = darkMode ? '#94A3B8' : '#6B7280';
 
   const fmt = (v) => `₹${v.toLocaleString('en-IN')}`;
+  const currentInputs = { productPrice, downPayment, tenure, creditScore, monthlyIncome, existingEMI };
+
+  useEffect(() => {
+    setDownPayment(prev => clampDownPayment(prev, productPrice));
+  }, [productPrice]);
+
+  const scenarioPresets = [
+    {
+      label: 'Safer',
+      tone: '#22C55E',
+      description: 'Higher down payment and longer tenure',
+      apply: () => {
+        setDownPayment(clampDownPayment(productPrice * 0.35, productPrice));
+        setTenure(12);
+      },
+    },
+    {
+      label: 'Balanced',
+      tone: '#38BDF8',
+      description: 'Moderate upfront cash with 6 month tenure',
+      apply: () => {
+        setDownPayment(clampDownPayment(productPrice * 0.2, productPrice));
+        setTenure(6);
+      },
+    },
+    {
+      label: 'Stretched',
+      tone: '#F59E0B',
+      description: 'Lower down payment and faster payoff',
+      apply: () => {
+        setDownPayment(clampDownPayment(productPrice * 0.1, productPrice));
+        setTenure(3);
+      },
+    },
+  ];
 
   const analyze = useCallback(() => {
-    let rate = 18;
-    if (creditScore >= 750) rate = 12;
-    else if (creditScore >= 700) rate = 14;
-    else if (creditScore >= 650) rate = 16;
-    else if (creditScore < 600) rate = 24;
+    const scenario = evaluateScenario({ productPrice, downPayment, tenure, creditScore, monthlyIncome, existingEMI });
 
-    const principal = Math.max(0, productPrice - downPayment);
-    const emi = calcEMI(principal, rate, tenure);
-    const totalEMIRatio = (emi + existingEMI) / monthlyIncome;
-    const remaining = monthlyIncome - existingEMI - emi;
-
-    let score = 100;
-    if (totalEMIRatio > 0.5) score -= 30;
-    else if (totalEMIRatio > 0.4) score -= 20;
-    else if (totalEMIRatio > 0.3) score -= 10;
-    if (creditScore < 550) score -= 25;
-    else if (creditScore < 650) score -= 15;
-    else if (creditScore >= 750) score += 5;
-    score = Math.max(0, Math.min(100, score));
-
-    const approved = totalEMIRatio <= 0.5 && creditScore >= 500 && principal > 0;
-
-    setResult({ emi, totalEMIRatio: (totalEMIRatio * 100).toFixed(1), remaining, score, approved, rate, principal, total: emi * tenure });
+    setResult({ ...scenario, totalEMIRatio: (scenario.totalEMIRatio * 100).toFixed(1) });
   }, [productPrice, downPayment, tenure, creditScore, monthlyIncome, existingEMI]);
 
   useEffect(() => { analyze(); }, [analyze]);
@@ -77,14 +132,120 @@ export default function WhatIfSimulator({ darkMode, initialData }) {
   // Sensitivity data: EMI across down payment variations
   const sensitivityData = Array.from({ length: 6 }, (_, i) => {
     const dp = Math.round((productPrice * (i * 0.1)) / 1000) * 1000;
-    const p = Math.max(0, productPrice - dp);
-    const rate = creditScore >= 750 ? 12 : creditScore >= 700 ? 14 : creditScore >= 650 ? 16 : 24;
-    const e = calcEMI(p, rate, tenure);
-    return { dp: `${i * 10}%`, emi: e };
+    const scenario = evaluateScenario({ productPrice, downPayment: dp, tenure, creditScore, monthlyIncome, existingEMI });
+    return { dp: `${i * 10}%`, emi: scenario.emi };
   });
 
   const approvalColor = result?.approved ? '#22C55E' : '#EF4444';
   const scoreColor = result?.score >= 75 ? '#22C55E' : result?.score >= 50 ? '#F59E0B' : '#EF4444';
+  const tenureData = [3, 6, 9, 12].map(months => {
+    const scenario = evaluateScenario({ productPrice, downPayment, tenure: months, creditScore, monthlyIncome, existingEMI });
+    return {
+      tenure: `${months}M`,
+      months,
+      emi: scenario.emi,
+      total: scenario.total,
+      interest: Math.max(0, scenario.total - scenario.principal),
+      ratio: Number((scenario.totalEMIRatio * 100).toFixed(1)),
+      approved: scenario.approved,
+    };
+  });
+  const safeTenures = tenureData.filter(item => item.approved);
+  const bestTenure = safeTenures.length
+    ? [...safeTenures].sort((a, b) => a.total - b.total)[0]
+    : null;
+  const approvalDp = (() => {
+    if (result?.approved) return downPayment;
+    const maxDp = Math.floor(productPrice * 0.8);
+    for (let dp = Math.max(0, downPayment); dp <= maxDp; dp += 500) {
+      const scenario = evaluateScenario({ productPrice, downPayment: dp, tenure, creditScore, monthlyIncome, existingEMI });
+      if (scenario.approved) return dp;
+    }
+    return null;
+  })();
+  const currentMonthlyCommitment = (result?.emi || 0) + existingEMI;
+  const incomeGap = Math.max(0, Math.ceil(currentMonthlyCommitment / 0.5 - monthlyIncome));
+  const approvalCushion = Math.max(0, Math.floor(monthlyIncome * 0.5 - currentMonthlyCommitment));
+  const scoreGap = Math.max(0, 500 - creditScore);
+  const leverCards = [
+    {
+      label: result?.approved ? 'Approval Cushion' : 'Down Payment Path',
+      value: result?.approved
+        ? `${fmt(approvalCushion)} spare`
+        : approvalDp !== null
+          ? `${fmt(approvalDp)} total`
+          : 'Not enough',
+      sub: result?.approved
+        ? 'Before the 50% EMI/income ceiling'
+        : approvalDp !== null
+          ? `Add ${fmt(Math.max(0, approvalDp - downPayment))} to clear the ratio test`
+          : 'Try a lower cart value or higher monthly income',
+      color: result?.approved ? '#22C55E' : approvalDp !== null ? '#38BDF8' : '#EF4444',
+      icon: ShieldCheck,
+    },
+    {
+      label: incomeGap > 0 ? 'Income Gap' : 'Income Buffer',
+      value: incomeGap > 0 ? `${fmt(incomeGap)}/mo` : `${fmt(approvalCushion)}/mo`,
+      sub: incomeGap > 0 ? 'Extra monthly income needed for approval' : 'Room left under the approval threshold',
+      color: incomeGap > 0 ? '#F59E0B' : '#22C55E',
+      icon: TrendingUp,
+    },
+    {
+      label: 'Best Safe Tenure',
+      value: bestTenure ? `${bestTenure.months} months` : 'No safe tenure',
+      sub: bestTenure ? `${fmt(bestTenure.emi)} EMI with lowest safe total` : scoreGap > 0 ? `Credit score needs +${scoreGap}` : 'Increase down payment or reduce the cart',
+      color: bestTenure ? '#8B5CF6' : '#EF4444',
+      icon: Timer,
+    },
+  ];
+  const comparisonScenarios = [
+    { name: 'Current', inputs: currentInputs },
+    {
+      name: 'Safer',
+      inputs: {
+        ...currentInputs,
+        downPayment: clampDownPayment(productPrice * 0.35, productPrice),
+        tenure: 12,
+      },
+    },
+    {
+      name: 'Lean',
+      inputs: {
+        ...currentInputs,
+        downPayment: clampDownPayment(productPrice * 0.1, productPrice),
+        tenure: 3,
+      },
+    },
+  ].map((item) => {
+    const scenario = evaluateScenario(item.inputs);
+    return {
+      ...item,
+      emi: scenario.emi,
+      ratio: Number((scenario.totalEMIRatio * 100).toFixed(1)),
+      total: scenario.total,
+      score: scenario.score,
+      approved: scenario.approved,
+    };
+  });
+  const stressData = [0, 10, 20, 30].map((drop) => {
+    const stressedIncome = Math.max(1, Math.round(monthlyIncome * (1 - drop / 100)));
+    const scenario = evaluateScenario({ ...currentInputs, monthlyIncome: stressedIncome });
+    return {
+      drop: drop === 0 ? 'Base' : `-${drop}%`,
+      income: stressedIncome,
+      ratio: Number((scenario.totalEMIRatio * 100).toFixed(1)),
+      remaining: scenario.remaining,
+      score: scenario.score,
+      approved: scenario.approved,
+    };
+  });
+  const firstStressFailure = stressData.find(item => !item.approved);
+  const stressVerdict = firstStressFailure
+    ? firstStressFailure.drop === 'Base'
+      ? 'Risky at current income'
+      : `Breaks at ${firstStressFailure.drop} income`
+    : 'Holds through -30% income';
+  const stressColor = firstStressFailure ? '#F59E0B' : '#22C55E';
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -117,7 +278,7 @@ export default function WhatIfSimulator({ darkMode, initialData }) {
 
           <SliderRow label="Down Payment" value={downPayment}
             min={0} max={Math.floor(productPrice * 0.8)} step={500}
-            onChange={(v) => setDownPayment(Math.min(v, productPrice - 1))} format={fmt} darkMode={darkMode} color="#22C55E" />
+            onChange={(v) => setDownPayment(clampDownPayment(v, productPrice))} format={fmt} darkMode={darkMode} color="#22C55E" />
 
           <SliderRow label="Repayment Tenure" value={tenure}
             min={3} max={12} step={3}
@@ -198,26 +359,185 @@ export default function WhatIfSimulator({ darkMode, initialData }) {
         </div>
       </div>
 
-      {/* Sensitivity chart */}
+      {/* Scenario presets */}
+      <div className={`${cardBase} p-5`}>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h3 className={`flex items-center gap-2 text-sm font-semibold mb-1 ${textPrimary}`}>
+              <Sparkles size={16} style={{ color: '#38BDF8' }} />
+              Quick Scenario Presets
+            </h3>
+            <p className={`text-xs ${textSecondary}`}>Apply common repayment strategies, then fine tune with the sliders.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:w-[560px]">
+            {scenarioPresets.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={preset.apply}
+                className={`text-left p-3 rounded-lg border transition-all duration-200 ${darkMode ? 'bg-[#0A0F1E] border-white/10 hover:border-sky-400/40' : 'bg-gray-50 border-slate-200 hover:border-sky-300'}`}
+              >
+                <div className="text-sm font-bold mb-1" style={{ color: preset.tone }}>{preset.label}</div>
+                <div className={`text-[11px] leading-relaxed ${textSecondary}`}>{preset.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Decision levers */}
       <div className={`${cardBase} p-6`}>
-        <h3 className={`text-sm font-semibold mb-1 ${textPrimary}`}>EMI Sensitivity to Down Payment</h3>
-        <p className={`text-xs mb-4 ${textSecondary}`}>How your monthly EMI changes with different down payment percentages</p>
-        <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={sensitivityData}>
-            <defs>
-              <linearGradient id="emiGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#38BDF8" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#38BDF8" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-            <XAxis dataKey="dp" tick={{ fill: chartText, fontSize: 12 }} />
-            <YAxis tick={{ fill: chartText, fontSize: 11 }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}K`} />
-            <Tooltip formatter={(v) => [`₹${v.toLocaleString('en-IN')}`, 'Monthly EMI']}
-              contentStyle={{ background: chartBg, border: `1px solid ${gridColor}`, borderRadius: '8px', color: chartText }} />
-            <Area type="monotone" dataKey="emi" stroke="#38BDF8" fill="url(#emiGrad)" strokeWidth={2} dot={{ fill: '#38BDF8' }} />
-          </AreaChart>
-        </ResponsiveContainer>
+        <div className="flex items-start justify-between gap-4 mb-5">
+          <div>
+            <h3 className={`text-sm font-semibold mb-1 ${textPrimary}`}>Decision Levers</h3>
+            <p className={`text-xs ${textSecondary}`}>Smallest practical changes that move this scenario toward a safer approval.</p>
+          </div>
+          <div className={`hidden sm:inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${darkMode ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+            <CheckCircle2 size={14} style={{ color: approvalColor }} />
+            50% EMI ratio limit
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {leverCards.map((card) => (
+            <div key={card.label} className={`p-4 rounded-lg border ${darkMode ? 'bg-[#0A0F1E] border-white/10' : 'bg-gray-50 border-slate-200'}`}>
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-xs font-semibold uppercase tracking-wide ${textSecondary}`}>{card.label}</span>
+                <card.icon size={17} style={{ color: card.color }} />
+              </div>
+              <div className="text-xl font-bold font-mono mb-1" style={{ color: card.color }}>{card.value}</div>
+              <div className={`text-xs leading-relaxed ${textSecondary}`}>{card.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Scenario comparison */}
+      <div className={`${cardBase} p-6`}>
+        <h3 className={`text-sm font-semibold mb-1 ${textPrimary}`}>Scenario Comparison</h3>
+        <p className={`text-xs mb-4 ${textSecondary}`}>Current inputs compared against safer and lean repayment structures.</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {comparisonScenarios.map((scenario) => (
+            <div key={scenario.name} className={`p-4 rounded-lg border ${darkMode ? 'bg-[#0A0F1E] border-white/10' : 'bg-gray-50 border-slate-200'}`}>
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-xs font-semibold uppercase tracking-wide ${textSecondary}`}>{scenario.name}</span>
+                <span className="text-[11px] font-mono px-2 py-1 rounded-full"
+                  style={{
+                    color: scenario.approved ? '#22C55E' : '#EF4444',
+                    background: scenario.approved ? '#22C55E18' : '#EF444418',
+                    border: `1px solid ${scenario.approved ? '#22C55E35' : '#EF444435'}`,
+                  }}>
+                  {scenario.approved ? 'APPROVED' : 'WATCH'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className={`text-[11px] mb-1 ${textSecondary}`}>EMI</div>
+                  <div className="text-base font-bold font-mono" style={{ color: '#38BDF8' }}>{fmt(scenario.emi)}</div>
+                </div>
+                <div>
+                  <div className={`text-[11px] mb-1 ${textSecondary}`}>Ratio</div>
+                  <div className="text-base font-bold font-mono" style={{ color: scenario.ratio <= 50 ? '#22C55E' : '#EF4444' }}>{scenario.ratio}%</div>
+                </div>
+                <div>
+                  <div className={`text-[11px] mb-1 ${textSecondary}`}>Total</div>
+                  <div className="text-base font-bold font-mono" style={{ color: '#F59E0B' }}>{fmt(scenario.total)}</div>
+                </div>
+                <div>
+                  <div className={`text-[11px] mb-1 ${textSecondary}`}>Score</div>
+                  <div className="text-base font-bold font-mono" style={{ color: scenario.score >= 75 ? '#22C55E' : scenario.score >= 50 ? '#F59E0B' : '#EF4444' }}>{scenario.score}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Stress test */}
+      <div className={`${cardBase} p-6`}>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
+          <div>
+            <h3 className={`flex items-center gap-2 text-sm font-semibold mb-1 ${textPrimary}`}>
+              <TrendingDown size={16} style={{ color: stressColor }} />
+              Income Stress Test
+            </h3>
+            <p className={`text-xs ${textSecondary}`}>Checks whether the current EMI remains safe if monthly income temporarily falls.</p>
+          </div>
+          <div className={`px-4 py-3 rounded-lg border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
+            <div className={`text-[11px] uppercase tracking-wider mb-1 ${textSecondary}`}>Resilience verdict</div>
+            <div className="text-sm font-bold" style={{ color: stressColor }}>{stressVerdict}</div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5">
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={stressData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+              <XAxis dataKey="drop" tick={{ fill: chartText, fontSize: 12 }} />
+              <YAxis tick={{ fill: chartText, fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
+              <ReferenceLine y={50} stroke="#F59E0B" strokeDasharray="4 4" />
+              <Tooltip formatter={(v, name) => [name === 'ratio' ? `${v}%` : v, name === 'ratio' ? 'EMI/Income Ratio' : name]}
+                contentStyle={{ background: chartBg, border: `1px solid ${gridColor}`, borderRadius: '8px', color: chartText }} />
+              <Line type="monotone" dataKey="ratio" stroke="#38BDF8" strokeWidth={2.5} dot={{ fill: '#38BDF8', r: 4 }} />
+            </LineChart>
+          </ResponsiveContainer>
+          <div className="grid grid-cols-2 lg:grid-cols-1 gap-3">
+            {stressData.map((item) => (
+              <div key={item.drop} className={`p-3 rounded-lg border ${darkMode ? 'bg-[#0A0F1E] border-white/10' : 'bg-gray-50 border-slate-200'}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-xs font-semibold ${textSecondary}`}>{item.drop}</span>
+                  <span className="text-[10px] font-mono" style={{ color: item.approved ? '#22C55E' : '#EF4444' }}>
+                    {item.approved ? 'SAFE' : 'RISK'}
+                  </span>
+                </div>
+                <div className="text-sm font-bold font-mono" style={{ color: item.ratio <= 50 ? '#22C55E' : '#EF4444' }}>{item.ratio}%</div>
+                <div className={`text-[11px] mt-1 ${textSecondary}`}>{fmt(item.income)} income</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Sensitivity chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className={`${cardBase} p-6`}>
+          <h3 className={`text-sm font-semibold mb-1 ${textPrimary}`}>EMI Sensitivity to Down Payment</h3>
+          <p className={`text-xs mb-4 ${textSecondary}`}>How monthly EMI changes with different down payment percentages</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={sensitivityData}>
+              <defs>
+                <linearGradient id="emiGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#38BDF8" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#38BDF8" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+              <XAxis dataKey="dp" tick={{ fill: chartText, fontSize: 12 }} />
+              <YAxis tick={{ fill: chartText, fontSize: 11 }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}K`} />
+              <Tooltip formatter={(v) => [`₹${v.toLocaleString('en-IN')}`, 'Monthly EMI']}
+                contentStyle={{ background: chartBg, border: `1px solid ${gridColor}`, borderRadius: '8px', color: chartText }} />
+              <Area type="monotone" dataKey="emi" stroke="#38BDF8" fill="url(#emiGrad)" strokeWidth={2} dot={{ fill: '#38BDF8' }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className={`${cardBase} p-6`}>
+          <h3 className={`text-sm font-semibold mb-1 ${textPrimary}`}>Tenure Trade-Off</h3>
+          <p className={`text-xs mb-4 ${textSecondary}`}>Compare EMI load across repayment tenures; red bars miss the approval threshold.</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={tenureData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+              <XAxis dataKey="tenure" tick={{ fill: chartText, fontSize: 12 }} />
+              <YAxis tick={{ fill: chartText, fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
+              <ReferenceLine y={50} stroke="#F59E0B" strokeDasharray="4 4" />
+              <Tooltip formatter={(v, name) => [name === 'ratio' ? `${v}%` : `₹${v.toLocaleString('en-IN')}`, name === 'ratio' ? 'EMI/Income Ratio' : name]}
+                contentStyle={{ background: chartBg, border: `1px solid ${gridColor}`, borderRadius: '8px', color: chartText }} />
+              <Bar dataKey="ratio" radius={[6, 6, 0, 0]}>
+                {tenureData.map((entry) => (
+                  <Cell key={entry.tenure} fill={entry.approved ? '#22C55E' : '#EF4444'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
