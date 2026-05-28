@@ -1,0 +1,227 @@
+const express = require('express');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_smartbnpl_key';
+const users = [];
+
+// Auth Middleware
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (token == null) return res.status(401).json({ error: 'Authentication required' });
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Invalid or expired token' });
+    req.user = user;
+    next();
+  });
+}
+
+app.post('/api/signup', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) return res.status(400).json({ error: 'All fields are required' });
+    
+    if (users.find(u => u.email === email)) {
+      return res.status(400).json({ error: 'User already exists' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = { id: Date.now(), name, email, password: hashedPassword };
+    users.push(newUser);
+
+    const token = jwt.sign({ id: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ message: 'User created successfully', token, user: { name: newUser.name, email: newUser.email } });
+  } catch (error) {
+    res.status(500).json({ error: 'Error creating user' });
+  }
+});
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = users.find(u => u.email === email);
+    if (!user) return res.status(400).json({ error: 'User not found' });
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) return res.status(400).json({ error: 'Invalid credentials' });
+
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ message: 'Login successful', token, user: { name: user.name, email: user.email } });
+  } catch (error) {
+    res.status(500).json({ error: 'Error logging in' });
+  }
+});
+
+// EMI calculation using reducing balance method
+function calculateEMI(principal, annualRate, tenureMonths) {
+  const monthlyRate = annualRate / 12 / 100;
+  if (monthlyRate === 0) return principal / tenureMonths;
+  const emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, tenureMonths)) /
+    (Math.pow(1 + monthlyRate, tenureMonths) - 1);
+  return Math.round(emi);
+}
+
+function getInterestRate(creditScore, employmentType, defaults) {
+  let baseRate = 18;
+  if (creditScore >= 750) baseRate = 12;
+  else if (creditScore >= 700) baseRate = 14;
+  else if (creditScore >= 650) baseRate = 16;
+  else if (creditScore >= 600) baseRate = 20;
+  else baseRate = 24;
+
+  if (employmentType === 'Self-employed') baseRate += 2;
+  if (employmentType === 'Student') baseRate += 4;
+  if (defaults === 1) baseRate += 3;
+
+  return Math.min(baseRate, 36);
+}
+
+function getRiskGrade(affordabilityScore) {
+  if (affordabilityScore >= 80) return 'A';
+  if (affordabilityScore >= 65) return 'B';
+  if (affordabilityScore >= 50) return 'C';
+  return 'D';
+}
+
+function generateRecommendations(data, emiResult, affordabilityScore) {
+  const { monthlyIncome, existingEMI, creditScore, defaults, downPayment, productPrice, tenure } = data;
+  const recs = [];
+  const emiRatio = (emiResult.monthlyEMI + existingEMI) / monthlyIncome * 100;
+
+  if (emiRatio > 40) recs.push({ type: 'warning', text: `Your EMI consumes ${emiRatio.toFixed(0)}% of income. Consider a longer tenure.` });
+  if (emiRatio > 30 && emiRatio <= 40) recs.push({ type: 'info', text: `Your EMI uses ${emiRatio.toFixed(0)}% of monthly income — within safe limits.` });
+
+  const dpPercent = (downPayment / productPrice) * 100;
+  if (dpPercent < 20) recs.push({ type: 'warning', text: 'Increase down payment to 20%+ to reduce EMI burden.' });
+  if (dpPercent >= 30) recs.push({ type: 'success', text: 'Excellent down payment — this significantly reduces your interest.' });
+
+  if (creditScore < 650) recs.push({ type: 'warning', text: 'Improve your credit score above 650 for better interest rates.' });
+  if (creditScore >= 750) recs.push({ type: 'success', text: 'Excellent credit score qualifies you for our best rates.' });
+
+  if (tenure === 3 && affordabilityScore < 70) recs.push({ type: 'info', text: 'A 6-9 month tenure would reduce monthly EMI pressure.' });
+  if (tenure >= 9 && affordabilityScore > 80) recs.push({ type: 'success', text: 'You can afford a shorter tenure (6 months) and save on interest.' });
+
+  if (defaults === 0) recs.push({ type: 'success', text: 'Zero defaults — excellent repayment track record.' });
+  if (defaults >= 1) recs.push({ type: 'warning', text: 'Past defaults impact your approval odds. Maintain timely payments.' });
+
+  const remaining = monthlyIncome - existingEMI - emiResult.monthlyEMI;
+  if (remaining < monthlyIncome * 0.4) recs.push({ type: 'warning', text: `Remaining salary after EMIs: ₹${remaining.toLocaleString('en-IN')} — budget carefully.` });
+  if (remaining > monthlyIncome * 0.6) recs.push({ type: 'success', text: `Strong remaining salary: ₹${remaining.toLocaleString('en-IN')} post EMI.` });
+
+  return recs;
+}
+
+function analyzeRiskFactors(data, emiResult) {
+  const factors = [];
+  const { monthlyIncome, existingEMI, creditScore, creditHistory, defaults, employmentType } = data;
+  const totalEMIRatio = (emiResult.monthlyEMI + existingEMI) / monthlyIncome;
+
+  factors.push({ positive: true, text: monthlyIncome > 30000 ? 'Stable and sufficient monthly income' : 'Income meets minimum threshold' });
+  factors.push({ positive: creditScore >= 650, text: creditScore >= 650 ? `Good credit score (${creditScore})` : `Credit score below safe threshold (${creditScore})` });
+  factors.push({ positive: creditHistory >= 12, text: creditHistory >= 12 ? `Established credit history (${creditHistory} months)` : `Short credit history (${creditHistory} months)` });
+  factors.push({ positive: defaults === 0, text: defaults === 0 ? 'No payment defaults on record' : `${defaults} default(s) detected — high risk flag` });
+  factors.push({ positive: totalEMIRatio <= 0.4, text: totalEMIRatio <= 0.4 ? 'EMI-to-income ratio within safe limit' : `EMI-to-income ratio too high (${(totalEMIRatio * 100).toFixed(0)}%)` });
+  factors.push({ positive: employmentType === 'Salaried', text: employmentType === 'Salaried' ? 'Salaried employment — stable income source' : `${employmentType} income — variable risk` });
+
+  return factors;
+}
+
+app.post('/analyze', authenticateToken, (req, res) => {
+  try {
+    const { monthlyIncome, existingEMI, creditScore, creditHistory, defaults,
+      productPrice, downPayment, tenure, employmentType } = req.body;
+
+    const principal = productPrice - downPayment;
+    const annualRate = getInterestRate(creditScore, employmentType, defaults);
+    const monthlyEMI = calculateEMI(principal, annualRate, tenure);
+    const totalPayable = monthlyEMI * tenure;
+    const totalInterest = totalPayable - principal;
+
+    // Affordability score calculation
+    let score = 100;
+    const totalEMIRatio = (monthlyEMI + existingEMI) / monthlyIncome;
+    if (totalEMIRatio > 0.5) score -= 30;
+    else if (totalEMIRatio > 0.4) score -= 20;
+    else if (totalEMIRatio > 0.3) score -= 10;
+
+    if (creditScore < 550) score -= 25;
+    else if (creditScore < 650) score -= 15;
+    else if (creditScore >= 750) score += 5;
+
+    if (defaults >= 2) score -= 35;
+    else if (defaults === 1) score -= 15;
+
+    if (creditHistory < 6) score -= 10;
+    else if (creditHistory >= 24) score += 5;
+
+    const dpPercent = downPayment / productPrice;
+    if (dpPercent >= 0.3) score += 5;
+    else if (dpPercent < 0.1) score -= 10;
+
+    if (employmentType === 'Student') score -= 10;
+    else if (employmentType === 'Self-employed') score -= 5;
+
+    score = Math.max(0, Math.min(100, score));
+
+    // Approval logic
+    let approved = true;
+    let rejectionReasons = [];
+
+    if (defaults >= 2) { approved = false; rejectionReasons.push('Multiple defaults detected'); }
+    if (totalEMIRatio > 0.5) { approved = false; rejectionReasons.push('EMI exceeds 50% of monthly income'); }
+    if (creditScore < 500) { approved = false; rejectionReasons.push('Credit score critically low'); }
+    if (principal <= 0) { approved = false; rejectionReasons.push('Down payment exceeds product price'); }
+
+    const riskGrade = getRiskGrade(score);
+    const riskLevel = score >= 75 ? 'Low' : score >= 50 ? 'Medium' : 'High';
+    const remainingSalary = monthlyIncome - existingEMI - monthlyEMI;
+
+    // EMI comparison across tenures
+    const emiComparison = [3, 6, 9, 12].map(t => ({
+      tenure: t,
+      emi: calculateEMI(principal, annualRate, t),
+      totalInterest: calculateEMI(principal, annualRate, t) * t - principal,
+      totalPayable: calculateEMI(principal, annualRate, t) * t,
+    }));
+
+    const emiResult = { monthlyEMI, totalPayable, totalInterest, annualRate, principal };
+    const recommendations = generateRecommendations(req.body, emiResult, score);
+    const riskFactors = analyzeRiskFactors(req.body, emiResult);
+
+    res.json({
+      approved,
+      rejectionReasons,
+      affordabilityScore: score,
+      riskGrade,
+      riskLevel,
+      monthlyEMI,
+      totalPayable,
+      totalInterest,
+      annualRate,
+      principal,
+      remainingSalary,
+      recommendations,
+      riskFactors,
+      emiComparison,
+      financialHealth: score,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/calculate-emi', (req, res) => {
+  const { principal, annualRate, tenure } = req.body;
+  const emi = calculateEMI(principal, annualRate, tenure);
+  res.json({ emi, totalPayable: emi * tenure, totalInterest: emi * tenure - principal });
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`SmartBNPL API running on port ${PORT}`));
