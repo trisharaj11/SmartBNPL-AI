@@ -14,6 +14,13 @@ function calculateEMI(principal, annualRate, tenureMonths) {
   return Math.round(emi);
 }
 
+function calculatePrincipalFromEMI(emi, annualRate, tenureMonths) {
+  const monthlyRate = annualRate / 12 / 100;
+  if (monthlyRate === 0) return Math.round(emi * tenureMonths);
+  return Math.round((emi * (Math.pow(1 + monthlyRate, tenureMonths) - 1)) /
+    (monthlyRate * Math.pow(1 + monthlyRate, tenureMonths)));
+}
+
 function getInterestRate(creditScore, employmentType, defaults) {
   let baseRate = 18;
   if (creditScore >= 750) baseRate = 12;
@@ -117,25 +124,48 @@ app.post('/analyze', (req, res) => {
     score = Math.max(0, Math.min(100, score));
 
     // Approval logic
-    let approved = true;
+    let hardReject = false;
     let rejectionReasons = [];
 
-    if (defaults >= 2) { approved = false; rejectionReasons.push('Multiple defaults detected'); }
-    if (totalEMIRatio > 0.5) { approved = false; rejectionReasons.push('EMI exceeds 50% of monthly income'); }
-    if (creditScore < 500) { approved = false; rejectionReasons.push('Credit score critically low'); }
-    if (principal <= 0) { approved = false; rejectionReasons.push('Down payment exceeds product price'); }
+    if (defaults >= 2) { hardReject = true; rejectionReasons.push('Multiple defaults detected'); }
+    if (totalEMIRatio > 0.5) { hardReject = true; rejectionReasons.push('EMI exceeds 50% of monthly income'); }
+    if (creditScore < 500) { hardReject = true; rejectionReasons.push('Credit score critically low'); }
+    if (principal <= 0) { hardReject = true; rejectionReasons.push('Down payment exceeds product price'); }
 
     const riskGrade = getRiskGrade(score);
     const riskLevel = score >= 75 ? 'Low' : score >= 50 ? 'Medium' : 'High';
     const remainingSalary = monthlyIncome - existingEMI - monthlyEMI;
+    const affordabilityBand = totalEMIRatio <= 0.3 ? 'Safe' : totalEMIRatio <= 0.5 ? 'Moderate' : 'Risky';
+    const maxAffordableEMI = Math.max(0, monthlyIncome * 0.3 - existingEMI);
+    const eligibleLimit = calculatePrincipalFromEMI(maxAffordableEMI, annualRate, tenure);
 
     // EMI comparison across tenures
-    const emiComparison = [3, 6, 9, 12].map(t => ({
-      tenure: t,
-      emi: calculateEMI(principal, annualRate, t),
-      totalInterest: calculateEMI(principal, annualRate, t) * t - principal,
-      totalPayable: calculateEMI(principal, annualRate, t) * t,
-    }));
+    const emiComparison = [3, 6, 9, 12].map(t => {
+      const tenureEMI = calculateEMI(principal, annualRate, t);
+      return {
+        tenure: t,
+        emi: tenureEMI,
+        totalInterest: tenureEMI * t - principal,
+        totalPayable: tenureEMI * t,
+        affordable: (tenureEMI + existingEMI) / monthlyIncome <= 0.3,
+      };
+    });
+
+    const recommendedTenure = emiComparison.find(row => row.affordable)?.tenure
+      || emiComparison.reduce((best, row) => row.emi < best.emi ? row : best, emiComparison[0]).tenure;
+    const decisionStatus = hardReject ? 'Rejected' : score >= 70 && totalEMIRatio <= 0.3 ? 'Approved' : score >= 50 ? 'Conditional Approval' : 'Rejected';
+    const approved = decisionStatus === 'Approved';
+    if (decisionStatus === 'Conditional Approval') {
+      rejectionReasons = ['Eligible with safer tenure or higher down payment recommended'];
+    } else if (decisionStatus === 'Rejected' && rejectionReasons.length === 0) {
+      rejectionReasons = ['Affordability score below approval threshold'];
+    }
+
+    const noCostEMI = Math.round(principal / tenure);
+    const noCostComparison = [
+      { type: 'No Cost EMI', monthlyEMI: noCostEMI, totalPaid: principal, savings: totalPayable - principal },
+      { type: 'Standard EMI', monthlyEMI, totalPaid: totalPayable, savings: 0 },
+    ];
 
     const emiResult = { monthlyEMI, totalPayable, totalInterest, annualRate, principal };
     const recommendations = generateRecommendations(req.body, emiResult, score);
@@ -143,10 +173,14 @@ app.post('/analyze', (req, res) => {
 
     res.json({
       approved,
+      decisionStatus,
       rejectionReasons,
       affordabilityScore: score,
       riskGrade,
       riskLevel,
+      affordabilityBand,
+      eligibleLimit,
+      recommendedTenure,
       monthlyEMI,
       totalPayable,
       totalInterest,
@@ -156,6 +190,7 @@ app.post('/analyze', (req, res) => {
       recommendations,
       riskFactors,
       emiComparison,
+      noCostComparison,
       financialHealth: score,
     });
   } catch (err) {
@@ -169,5 +204,5 @@ app.post('/calculate-emi', (req, res) => {
   res.json({ emi, totalPayable: emi * tenure, totalInterest: emi * tenure - principal });
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => console.log(`SmartBNPL API running on port ${PORT}`));

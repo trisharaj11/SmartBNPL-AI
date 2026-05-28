@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const N8N_WEBHOOK_URL = 'https://tanyajaiswal1625.app.n8n.cloud/webhook-test/bnpl-check';
+const N8N_WEBHOOK_URL = process.env.REACT_APP_N8N_WEBHOOK_URL || 'https://tanyajaiswal1625.app.n8n.cloud/webhook-test/bnpl-check';
 
 const initialForm = {
   fullName: '',
@@ -302,15 +302,23 @@ function normalizeN8nResult(n8nResult, payload) {
   const remainingSalary = Number(result.remainingSalary ?? result.remaining_salary ?? payload.monthlyIncome - payload.existingEMI - monthlyEMI);
   const riskGrade = result.riskGrade ?? result.risk_grade ?? localResult.riskGrade;
   const riskLevel = result.riskLevel ?? result.risk_level ?? localResult.riskLevel;
+  const decisionStatus = result.decisionStatus ?? result.decision_status ?? result.decision ?? localResult.decisionStatus;
+  const eligibleLimit = Number(result.eligibleLimit ?? result.eligible_limit ?? localResult.eligibleLimit);
+  const recommendedTenure = Number(result.recommendedTenure ?? result.recommended_tenure ?? localResult.recommendedTenure);
+  const affordabilityBand = result.affordabilityBand ?? result.affordability_band ?? localResult.affordabilityBand;
   const rejectionReasons = result.rejectionReasons ?? result.rejection_reasons ?? localResult.rejectionReasons;
   const message = result.message ?? result.reason ?? result.recommendation;
 
   return {
     ...localResult,
     approved,
+    decisionStatus,
     affordabilityScore,
     riskGrade,
     riskLevel,
+    eligibleLimit,
+    recommendedTenure,
+    affordabilityBand,
     monthlyEMI,
     totalPayable,
     totalInterest,
@@ -328,6 +336,9 @@ function normalizeN8nResult(n8nResult, payload) {
     emiComparison: Array.isArray(result.emiComparison ?? result.emi_comparison)
       ? (result.emiComparison ?? result.emi_comparison)
       : localResult.emiComparison,
+    noCostComparison: Array.isArray(result.noCostComparison ?? result.no_cost_comparison)
+      ? (result.noCostComparison ?? result.no_cost_comparison)
+      : localResult.noCostComparison,
     financialHealth: Number(result.financialHealth ?? result.financial_health ?? affordabilityScore),
     rejectionReasons,
     n8nRaw: result,
@@ -365,18 +376,32 @@ function runClientAnalysis(data) {
   if (creditHistory < 6) score -= 10;
   score = Math.max(0, Math.min(100, score));
 
-  const approved = defaults < 2 && totalEMIRatio <= 0.5 && creditScore >= 500 && principal > 0;
+  const hardReject = defaults >= 2 || totalEMIRatio > 0.5 || creditScore < 500 || principal <= 0;
+  const decisionStatus = hardReject ? 'Rejected' : score >= 70 && totalEMIRatio <= 0.3 ? 'Approved' : score >= 50 ? 'Conditional Approval' : 'Rejected';
+  const approved = decisionStatus === 'Approved';
   const riskGrade = score >= 80 ? 'A' : score >= 65 ? 'B' : score >= 50 ? 'C' : 'D';
   const riskLevel = score >= 75 ? 'Low' : score >= 50 ? 'Medium' : 'High';
+  const affordabilityBand = totalEMIRatio <= 0.3 ? 'Safe' : totalEMIRatio <= 0.5 ? 'Moderate' : 'Risky';
   const remainingSalary = monthlyIncome - existingEMI - emi;
+  const maxAffordableEMI = Math.max(0, monthlyIncome * 0.3 - existingEMI);
+  const eligibleLimit = Math.round((maxAffordableEMI * (Math.pow(1 + monthlyRate, tenure) - 1)) /
+    (monthlyRate * Math.pow(1 + monthlyRate, tenure)));
 
   const emiComparison = [3, 6, 9, 12].map(t => {
     const e = Math.round((principal * monthlyRate * Math.pow(1 + monthlyRate, t)) / (Math.pow(1 + monthlyRate, t) - 1));
-    return { tenure: t, emi: e, totalInterest: e * t - principal, totalPayable: e * t };
+    return { tenure: t, emi: e, totalInterest: e * t - principal, totalPayable: e * t, affordable: (e + existingEMI) / monthlyIncome <= 0.3 };
   });
+  const recommendedTenure = emiComparison.find(row => row.affordable)?.tenure
+    || emiComparison.reduce((best, row) => row.emi < best.emi ? row : best, emiComparison[0]).tenure;
+  const noCostEMI = Math.round(principal / tenure);
+  const noCostComparison = [
+    { type: 'No Cost EMI', monthlyEMI: noCostEMI, totalPaid: principal, savings: emi * tenure - principal },
+    { type: 'Standard EMI', monthlyEMI: emi, totalPaid: emi * tenure, savings: 0 },
+  ];
 
   return {
-    approved, affordabilityScore: score, riskGrade, riskLevel,
+    approved, decisionStatus, affordabilityScore: score, riskGrade, riskLevel,
+    eligibleLimit, recommendedTenure, affordabilityBand,
     monthlyEMI: emi, totalPayable: emi * tenure, totalInterest: emi * tenure - principal,
     annualRate: baseRate, principal, remainingSalary,
     recommendations: [
@@ -391,7 +416,10 @@ function runClientAnalysis(data) {
       { positive: totalEMIRatio <= 0.4, text: totalEMIRatio <= 0.4 ? 'EMI ratio within safe limits' : 'EMI ratio too high' },
     ],
     emiComparison,
+    noCostComparison,
     financialHealth: score,
-    rejectionReasons: approved ? [] : ['Eligibility criteria not met'],
+    rejectionReasons: approved ? [] : decisionStatus === 'Conditional Approval'
+      ? ['Eligible with safer tenure or higher down payment recommended']
+      : ['Eligibility criteria not met'],
   };
 }
